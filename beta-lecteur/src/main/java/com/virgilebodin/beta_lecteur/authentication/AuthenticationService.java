@@ -1,11 +1,15 @@
 package com.virgilebodin.beta_lecteur.authentication;
 
+import com.virgilebodin.beta_lecteur.email.EmailService;
+import com.virgilebodin.beta_lecteur.email.EmailTemplateName;
 import com.virgilebodin.beta_lecteur.role.RoleRepository;
 import com.virgilebodin.beta_lecteur.user.Token;
 import com.virgilebodin.beta_lecteur.user.TokenRepository;
 import com.virgilebodin.beta_lecteur.user.User;
 import com.virgilebodin.beta_lecteur.user.UserRepository;
+import jakarta.mail.MessagingException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -21,8 +25,11 @@ public class AuthenticationService {
     private final PasswordEncoder passwordEncoder;
     private final UserRepository userRepository;
     private final TokenRepository tokenRepository;
+    private final EmailService emailService;
+    @Value("${application.mailing.frontend.activation-url}")
+    private String activationUrl;
 
-    public void register(RegistrationRequest request) {
+    public void register(RegistrationRequest request) throws MessagingException {
         var userRole = roleRepository.findByName("USER").orElseThrow(() -> new IllegalStateException("Le role utilisateur n'est pas initialisé"));
 
         var user = User.builder()
@@ -40,8 +47,16 @@ public class AuthenticationService {
 
     }
 
-    private void sendValidationEmail(User user) {
+    private void sendValidationEmail(User user) throws MessagingException {
         var newToken = generateAndSaveActivationToken(user);
+        emailService.sendEmail(
+                user.getEmail(),
+                user.getFullName(),
+                EmailTemplateName.ACTIVATE_ACCOUNT,
+                activationUrl,
+                newToken,
+                "Activation du compte"
+        );
 
         
     }
@@ -69,4 +84,5 @@ public class AuthenticationService {
         }
         return tokenBuilder.toString();
 
+    }
 }
