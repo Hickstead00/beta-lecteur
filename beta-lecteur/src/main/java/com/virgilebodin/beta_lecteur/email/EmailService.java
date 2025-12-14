@@ -45,7 +45,7 @@ public class EmailService {
         );
 
         Map<String, Object> properties = new HashMap<>();
-        properties.put("username", userName);
+        properties.put("userName", userName);
         properties.put("confirmationUrl", confirmationUrl);
         properties.put("activationCode", activationCode);
 
