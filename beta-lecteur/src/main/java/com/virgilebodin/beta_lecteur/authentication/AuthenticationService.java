@@ -3,18 +3,25 @@ package com.virgilebodin.beta_lecteur.authentication;
 import com.virgilebodin.beta_lecteur.email.EmailService;
 import com.virgilebodin.beta_lecteur.email.EmailTemplateName;
 import com.virgilebodin.beta_lecteur.role.RoleRepository;
+import com.virgilebodin.beta_lecteur.security.JwtService;
 import com.virgilebodin.beta_lecteur.user.Token;
 import com.virgilebodin.beta_lecteur.user.TokenRepository;
 import com.virgilebodin.beta_lecteur.user.User;
 import com.virgilebodin.beta_lecteur.user.UserRepository;
 import jakarta.mail.MessagingException;
+import jakarta.transaction.Transactional;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 
 @Service
@@ -26,6 +33,8 @@ public class AuthenticationService {
     private final UserRepository userRepository;
     private final TokenRepository tokenRepository;
     private final EmailService emailService;
+    private final AuthenticationManager authenticationManager;
+    private final JwtService jwtService;
     @Value("${application.mailing.frontend.activation-url}")
     private String activationUrl;
 
@@ -83,6 +92,36 @@ public class AuthenticationService {
             tokenBuilder.append(characters.charAt(randomIndex));
         }
         return tokenBuilder.toString();
+
+    }
+
+    public AuthenticationResponse authenticate(@Valid AuthenticationRequest request) {
+        var auth = authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword())
+        );
+        var claims = new HashMap<String, Object>();
+        var user = ((User)auth.getPrincipal());
+        claims.put("fullName", user.getFullName());
+        var jwtToken = jwtService.generateToken(claims, user);
+        return AuthenticationResponse.builder()
+                .token(jwtToken).build();
+    }
+
+
+    public void activateAccount(String token) throws MessagingException {
+        Token savedToken = tokenRepository.findByToken(token)
+                .orElseThrow(() -> new RuntimeException("Le token n'est pas valide"));
+        if(LocalDateTime.now().isAfter(savedToken.getExpiresAt())) {
+            sendValidationEmail(savedToken.getUser());
+            throw new RuntimeException("Le token d'activation à expiré. Un nouveau token à été envoyé à la même adresse mail");
+        }
+
+        var user = userRepository.findById(savedToken.getUser().getId())
+                .orElseThrow(() -> new UsernameNotFoundException("L'utilisateur n'est pas valide"));
+        user.setEnabled(true);
+        userRepository.save(user);
+        savedToken.setValidatedAt(LocalDateTime.now());
+        tokenRepository.save(savedToken);
 
     }
 }
